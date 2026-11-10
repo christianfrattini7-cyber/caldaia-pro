@@ -1,0 +1,377 @@
+ 
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#142430">
+<title>Caldaia PRO</title>
+<style>
+:root{--bg:#101820;--panel:#20313e;--text:white;--muted:#b8c7d1;--accent:#ffb000}
+:root.light{--bg:#eef2f5;--panel:white;--text:#17232d;--muted:#60717e;--accent:#bd8000}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif;padding-bottom:35px}
+header{background:#203746;padding:20px;text-align:center}
+header h1{margin:0;color:#ffb000}
+main{max-width:800px;margin:auto;padding:16px}
+button,input,textarea,select{font:inherit;border-radius:10px;padding:12px;border:0}
+button{background:var(--accent);color:#17232d;font-weight:bold;cursor:pointer;margin:4px}
+input,textarea,select{background:var(--panel);color:var(--text);width:100%;margin:5px 0;border:1px solid #52616b}
+textarea{min-height:160px;resize:vertical}
+.card{background:var(--panel);padding:14px;border-radius:13px;margin:10px 0}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row .grow{flex:1;min-width:120px}
+.muted{color:var(--muted);font-size:13px}
+.hidden{display:none}
+.folder{font-size:18px}
+.actions button{font-size:12px;padding:8px}
+h2{font-size:21px}
+a{color:var(--accent);overflow-wrap:anywhere}
+/* Animazione pulsanti */
+button {
+ transition: transform 0.15s ease, box-shadow 0.15s ease;
+ cursor: pointer;
+}
+
+button:active {
+ transform: scale(0.94);
+ box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+/* Animazione riquadri */
+.card {
+ transition: transform 0.2s ease, box-shadow 0.2s ease;
+ cursor: pointer;
+}
+
+.card:active {
+ transform: scale(0.97);
+ box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}
+
+/* Comparsa morbida */
+#homeTiles .card {
+ animation: comparsa 0.3s ease both;
+}
+
+@keyframes comparsa {
+ from {
+  opacity: 0;
+  transform: translateY(8px);
+ }
+ to {
+  opacity: 1;
+  transform: translateY(0);
+ }
+}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Caldaia PRO">
+</head>
+<body>
+<header>
+<h1>🔥 CALDAIA PRO</h1>
+<p>Il tuo archivio tecnico personale</p>
+</header>
+<main>
+<div id="home">
+<h2>Il mio archivio</h2>
+<input id="search" placeholder="🔎 Cerca cartelle, appunti e documenti">
+<div class="row">
+<button onclick="newFolder(null)">＋ Nuova cartella</button>
+<button onclick="backup()">⇩ Backup</button>
+<button onclick="document.getElementById('restore').click()">⇧ Ripristina</button>
+</div>
+<div id="folders"></div>
+
+<hr>
+<h3>⭐ I miei collegamenti</h3>
+<div class="row">
+<button onclick="addHomeTile()">＋ Crea riquadro</button>
+</div>
+<div id="homeTiles" class="grid"></div>
+
+<hr>
+<h3>Impostazioni</h3>
+<select id="theme" onchange="setTheme(this.value)">
+<option value="dark">Tema scuro</option>
+<option value="light">Tema chiaro</option>
+</select>
+<p class="muted">I dati sono salvati nel browser di questo dispositivo. Fai regolarmente un backup.</p>
+</div>
+
+<div id="detail" class="hidden">
+<button onclick="goHome()">← Torna all'archivio</button>
+<h2 id="folderTitle"></h2>
+<div class="row">
+<button onclick="newFolder(current)">＋ Sottocartella</button>
+<button onclick="newNote()">✎ Nuovo appunto</button>
+<button onclick="document.getElementById('files').click()">＋ Importa file/foto</button>
+<button onclick="renameFolder()">Rinomina</button>
+<button onclick="deleteFolder()">Elimina</button>
+</div>
+<input id="files" type="file" multiple class="hidden" onchange="importFiles(this.files);this.value=''">
+<div id="subfolders"></div>
+<h3>📝 Appunti</h3>
+<div id="notes"></div>
+<h3>📎 Documenti e foto</h3>
+<div id="attachments"></div>
+</div>
+<input id="restore" type="file" accept=".json" class="hidden" onchange="restoreBackup(this.files[0]);this.value=''">
+</main>
+
+<script>
+let data=JSON.parse(localStorage.getItem("caldaiaPRO")||"null")||{
+folders:[],notes:[],files:[]
+};
+let current=null;
+
+function save(){
+ try{
+ localStorage.setItem("caldaiaPRO",JSON.stringify(data));
+ }catch(e){
+ alert("Spazio di archiviazione insufficiente. Prova a importare file più piccoli.");
+ }
+}
+function id(){return Date.now().toString(36)+Math.random().toString(36).slice(2)}
+function safe(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function children(parent){return data.folders.filter(f=>f.parent===parent)}
+function goHome(){
+ current=null;
+ document.getElementById("home").classList.remove("hidden");
+ document.getElementById("detail").classList.add("hidden");
+ renderHome();
+}
+function openFolder(id){
+ current=id;
+ document.getElementById("home").classList.add("hidden");
+ document.getElementById("detail").classList.remove("hidden");
+ renderDetail();
+}
+function newFolder(parent){
+ let name=prompt("Nome della cartella:");
+ if(!name||!name.trim())return;
+ data.folders.push({id:id(),name:name.trim(),parent:parent});
+ save();
+ current?renderDetail():renderHome();
+}
+function renderHome(){
+ let q=document.getElementById("search").value.toLowerCase();
+ let box=document.getElementById("folders");
+ box.innerHTML="";
+ let found=data.folders.filter(f=>f.name.toLowerCase().includes(q));
+ if(q){
+  data.notes.forEach(n=>{
+   if((n.title+" "+n.body).toLowerCase().includes(q)){
+    let el=document.createElement("div");el.className="card";
+    el.textContent="📝 "+n.title+" — "+n.body.slice(0,90);
+    el.onclick=()=>openFolder(n.parent);box.append(el);
+   }
+  });
+  data.files.forEach(f=>{
+   if(f.name.toLowerCase().includes(q)){
+    let el=document.createElement("div");el.className="card";
+    el.textContent="📎 "+f.name;
+    el.onclick=()=>openFolder(f.parent);box.append(el);
+   }
+  });
+ }
+ found.filter(f=>!f.parent||q).forEach(f=>{
+  let el=document.createElement("div");el.className="card row";
+  let title=document.createElement("div");title.className="grow folder";
+  title.textContent="📁 "+f.name;
+  let open=document.createElement("button");open.textContent="Apri";
+  open.onclick=()=>openFolder(f.id);
+  el.append(title,open);box.append(el);
+ });
+ if(!box.children.length)box.innerHTML='<p class="muted">Archivio vuoto. Crea la tua prima cartella.</p>';
+}
+function renderDetail(){
+ let f=data.folders.find(x=>x.id===current);
+ if(!f){goHome();return}
+ document.getElementById("folderTitle").textContent="📁 "+f.name;
+ let sub=document.getElementById("subfolders");sub.innerHTML="";
+ children(current).forEach(x=>{
+  let el=document.createElement("div");el.className="card row";
+  let t=document.createElement("div");t.className="grow";t.textContent="📁 "+x.name;
+  let b=document.createElement("button");b.textContent="Apri";b.onclick=()=>openFolder(x.id);
+  el.append(t,b);sub.append(el);
+ });
+ let notes=document.getElementById("notes");notes.innerHTML="";
+ data.notes.filter(n=>n.parent===current).forEach(n=>{
+  let el=document.createElement("div");el.className="card";
+  let title=document.createElement("strong");title.textContent=n.title;
+  let body=document.createElement("p");body.style.whiteSpace="pre-wrap";body.textContent=n.body;
+  let edit=document.createElement("button");edit.textContent="Modifica";edit.onclick=()=>editNote(n.id);
+  let del=document.createElement("button");del.textContent="Elimina";del.onclick=()=>deleteNote(n.id);
+  el.append(title,body,edit,del);notes.append(el);
+ });
+ let files=document.getElementById("attachments");files.innerHTML="";
+ data.files.filter(f=>f.parent===current).forEach(f=>{
+  let el=document.createElement("div");el.className="card";
+  let title=document.createElement("p");title.textContent="📎 "+f.name;
+  let link=document.createElement("a");link.href=f.data;link.download=f.name;link.textContent="Apri o scarica";
+  let del=document.createElement("button");del.textContent="Elimina";del.onclick=()=>deleteFile(f.id);
+  el.append(title,link,del);files.append(el);
+ });
+}
+function newNote(){editNote(null)}
+function editNote(noteId){
+ let n=data.notes.find(x=>x.id===noteId);
+ let title=prompt("Titolo dell'appunto:",n?n.title:"");
+ if(title===null)return;
+ let body=prompt("Scrivi il contenuto dell'appunto:",n?n.body:"");
+ if(body===null)return;
+ if(n){n.title=title;n.body=body}
+ else data.notes.push({id:id(),parent:current,title,body});
+ save();renderDetail();
+}
+function deleteNote(noteId){
+ if(!confirm("Eliminare questo appunto?"))return;
+ data.notes=data.notes.filter(n=>n.id!==noteId);save();renderDetail();
+}
+function renameFolder(){
+ let f=data.folders.find(x=>x.id===current);
+ let name=prompt("Nuovo nome:",f.name);
+ if(name&&name.trim()){f.name=name.trim();save();renderDetail()}
+}
+function deleteFolder(){
+ if(!confirm("Eliminare la cartella e tutti i suoi contenuti?"))return;
+ let ids=[current];
+ for(let i=0;i<ids.length;i++){
+  children(ids[i]).forEach(x=>ids.push(x.id));
+ }
+ data.folders=data.folders.filter(f=>!ids.includes(f.id));
+ data.notes=data.notes.filter(n=>!ids.includes(n.parent));
+ data.files=data.files.filter(f=>!ids.includes(f.parent));
+ save();goHome();
+}
+async function importFiles(files){
+ for(const file of files){
+  let reader=new FileReader();
+  let result=await new Promise(resolve=>{reader.onload=()=>resolve(reader.result);reader.readAsDataURL(file)});
+  data.files.push({id:id(),parent:current,name:file.name,data:result});
+ }
+ save();renderDetail();
+}
+function deleteFile(fileId){
+ if(!confirm("Eliminare questo documento?"))return;
+ data.files=data.files.filter(f=>f.id!==fileId);save();renderDetail();
+}
+function backup(){
+ let blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+ let url=URL.createObjectURL(blob);
+ let a=document.createElement("a");a.href=url;a.download="CaldaiaPRO-backup.json";a.click();
+ URL.revokeObjectURL(url);
+}
+function restoreBackup(file){
+ if(!file)return;
+ let r=new FileReader();
+ r.onload=()=>{
+  try{
+   let restored=JSON.parse(r.result);
+   if(!restored.folders||!restored.notes||!restored.files)throw Error();
+   if(!confirm("Il backup sostituirà l'archivio attuale. Continuare?"))return;
+   data=restored;save();goHome();alert("Backup ripristinato!");
+  }catch(e){alert("File di backup non valido.")}
+ };
+ r.readAsText(file);
+}
+function setTheme(theme){
+ document.documentElement.classList.toggle("light",theme==="light");
+ localStorage.setItem("caldaiaTheme",theme);
+}
+if(!Array.isArray(data.homeTiles)) data.homeTiles=[];
+
+function renderHomeTiles(){
+ const box=document.getElementById("homeTiles");
+ if(!box) return;
+ box.innerHTML="";
+
+ data.homeTiles.forEach((tile,index)=>{
+  let el=document.createElement("div");
+  el.className="card row";
+
+  let label=document.createElement("div");
+  label.className="grow folder";
+  label.textContent=(tile.icon||"📁")+" "+tile.name;
+
+  let open=document.createElement("button");
+  open.textContent="Apri";
+  open.onclick=()=>openFolder(tile.folderId);
+
+let remove=document.createElement("button");
+  remove.textContent="Rimuovi";
+  remove.onclick=()=>{
+   if(confirm("Vuoi rimuovere questo riquadro?")){
+    data.homeTiles.splice(index,1);
+    save();
+    renderHome();
+   }
+  };
+
+  el.append(label,open,remove);
+  box.append(el);
+ });
+
+ if(!data.homeTiles.length){
+  box.innerHTML='<p class="muted">Nessun collegamento. Crea il primo riquadro.</p>';
+ }
+}
+
+const originalRenderHome=renderHome;
+renderHome=function(){
+ originalRenderHome();
+ renderHomeTiles();
+};
+
+function addHomeTile(){
+ if(!data.folders.length){
+  alert("Prima crea almeno una cartella nell'archivio.");
+  return;
+ }
+
+ let elenco=data.folders.map((f,i)=>(i+1)+". "+f.name).join("\n");
+ let scelta=prompt("Quale cartella vuoi collegare? Scrivi il numero:\n"+elenco);
+ if(scelta===null) return;
+
+ let idx=Number(scelta)-1;
+ if(!Number.isInteger(idx)||idx<0||idx>=data.folders.length){
+  alert("Numero non valido.");
+  return;
+ }
+
+ let folder=data.folders[idx];
+
+ let name=prompt("Nome del riquadro:",folder.name);
+ if(!name||!name.trim()) return;
+
+ let icon=prompt("Simbolo del riquadro:", "📁");
+ if(!icon) return;
+
+ data.homeTiles.push({
+  name:name.trim(),
+  icon:icon.trim(),
+  folderId:folder.id
+ });
+
+ save();
+ renderHome();
+}
+document.getElementById("search").addEventListener("input",renderHome);
+setTheme(localStorage.getItem("caldaiaTheme")||"dark");
+renderHome();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js")
+      .catch(error => console.error("Service Worker:", error));
+  });
+}
+</script>
+</body>
+</html>
